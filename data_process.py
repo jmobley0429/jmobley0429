@@ -1,20 +1,24 @@
+###############
+# Custom module of scripts for day-to-day work, particularly for processing
+# and querying large public-record parcel files.
+###############
+
+import re
+from sodapy import Socrata
+from pathlib import Path
 import pandas as pd
 import numpy as np
 pd.set_option('max_colwidth', 0)
 pd.set_option('max_columns', 0)
-from pathlib import Path
-from sodapy import Socrata
-import re
 
 
-
-def bulk_oc_data_dfs(dir, sheet_name="company_data" ):
+def bulk_oc_data_dfs(dir, sheet_name="company_data"):
 
     sheet_name_dict = {
-        "company_data":0,
-        "officers":1,
-        "filings":2,
-        "events":3
+        "company_data": 0,
+        "officers": 1,
+        "filings": 2,
+        "events": 3
     }
 
     sheet_name = sheet_name_dict[sheet_name]
@@ -26,10 +30,10 @@ def bulk_oc_data_dfs(dir, sheet_name="company_data" ):
 
         xl_file = path.absolute()
         df = pd.read_excel(
-            xl_file, 
-            sheet_name=sheet_name, 
-            squeeze=True, 
-            index_col=0, 
+            xl_file,
+            sheet_name=sheet_name,
+            squeeze=True,
+            index_col=0,
             header=0)
         if sheet_name == 0 and df.iloc[2] != "Active" and df.iloc[2] != "Good Standing":
             df = df.drop(index='dissolve_date')
@@ -39,6 +43,7 @@ def bulk_oc_data_dfs(dir, sheet_name="company_data" ):
     bulk_df = bulk_df.drop_duplicates(keep=False).transpose()
     return bulk_df
 
+
 def extract_kc_metro_cities(addr):
     """For use in a Series.apply lambda expression. 
     Will return two variables in a tuple: (matched_city, addr_with_city_removed).
@@ -47,9 +52,7 @@ def extract_kc_metro_cities(addr):
     Example: property_df["city"] = property_df["address"].apply( lambda x: extract_kc_metro_cities(x)[0])
              property_df["address"] = property_df["address"].apply( lambda x: extract_kc_metro_cities(x)[1])"""
 
-    
-    
-    city_file = "/home/jake/Documents/KCTenants/kc_parcel_data/kc_metro_cities.txt"
+    city_file = "~/Documents/KCTenants/kc_parcel_data/kc_metro_cities.txt"
     with open(city_file, "r") as f:
         cities = f.read()
         cities = cities.split(',')
@@ -58,11 +61,9 @@ def extract_kc_metro_cities(addr):
         addr_lower = addr.lower().replace("'", '')
         if city_lower in addr_lower:
             return (city, addr)
-    
 
 
-
-def extract_fuzzy_match(query_series, choice_series,limit=1, scorer="WRatio"):
+def extract_fuzzy_match(query_series, choice_series, limit=1, scorer="WRatio"):
     from statistics import mean
     from rapidfuzz import fuzz, process
     """
@@ -113,37 +114,38 @@ def extract_fuzzy_match(query_series, choice_series,limit=1, scorer="WRatio"):
         'partial_token_ratio': fuzz.partial_token_ratio,
         'WRatio': fuzz.WRatio,
         'QRatio': fuzz.QRatio
-        }
+    }
 
     scorer = scorer_dict[scorer]
 
     matches = query_series.apply(
         lambda x: process.extract(x, choice_series, limit=limit, scorer=scorer)
-        )
+    )
 
     master_match_list = []
     name = {
-        0:"match",
-        1:"score",
-        2:"index"
+        0: "match",
+        1: "score",
+        2: "index"
     }
     for index, sub_list in enumerate(matches):
         match_dict = {}
         match_dict['query'] = query_series.iloc[index]
         average_list = []
         for match_num, tuple in enumerate(sub_list):
-            suffix= f"_{match_num+1}"
+            suffix = f"_{match_num+1}"
             for i, item in enumerate(tuple):
                 key = f"{name[i]+suffix}"
                 value = sub_list[match_num][i]
                 if i == 1:
                     average_list.append(value)
-                match_dict.update({key:value})
+                match_dict.update({key: value})
         match_dict['score_avg'] = mean(average_list)
         master_match_list.append(match_dict)
     match_df = pd.DataFrame(master_match_list)
 
     return match_df
+
 
 def get_full_kc_parcels(city_owned=True, masked=False):
 
@@ -151,59 +153,59 @@ def get_full_kc_parcels(city_owned=True, masked=False):
     kc_df = pd.read_csv(file_path, dtype='object')
     kc_df.columns = kc_df.columns.str.lower().str.replace(" ", "_")
     kc_df = kc_df.replace(np.nan, '')
-    category_columns = ['own_city','own_state','own_zip','prefix',
-                        'street_type','landusecode','block'
+    category_columns = ['own_city', 'own_state', 'own_zip', 'prefix',
+                        'street_type', 'landusecode', 'block'
                         ]
     kc_df[category_columns] = kc_df[category_columns].astype('category')
     if not city_owned:
-        city_owned = pd.read_csv('/home/jake/Documents/KCTenants/kc_parcel_data/city_owned.csv', dtype='object')
+        city_owned = pd.read_csv(
+            '~/Documents/KCTenants/kc_parcel_data/city_owned.csv', dtype='object')
         city_owned.columns = city_owned.columns.str.lower()
-        kc_df = pd.concat([kc_df, city_owned]).drop_duplicates(subset=['kivapin', 'apn'], keep=False)
+        kc_df = pd.concat([kc_df, city_owned]).drop_duplicates(
+            subset=['kivapin', 'apn'], keep=False)
     if masked:
         mask = ['own_name', 'own_name2', 'own_addr',
-       'own_addr2', 'own_city', 'own_state', 'own_zip', 'address', 'addr',
-       'fraction', 'prefix', 'street', 'street_type',]
+                'own_addr2', 'own_city', 'own_state', 'own_zip', 'address', 'addr',
+                'fraction', 'prefix', 'street', 'street_type', ]
 
         kc_df = kc_df[mask]
-    
+
     return kc_df
 
 
 class GetKCOpenData():
-    
+
     APP_TOKEN = "SMzaH663n0szHDQXkHY7WiUYT"
     data_set_choices = {
         "311": '7at3-sxhp',
         'parcels': '3vhm-urud'
-        
+
     }
-
-
 
     columns = {
         "311_columns":
             [
-                'case_id','source','department','work_group',
-        'request_type','category','type','detail','creation_date','creation_time',
-        'creation_month','creation_year','status','exceeded_est_timeframe',
-        'closed_date','closed_month','closed_year','days_to_close','street_address',
-        'address_with_geocode','zip_code','neighborhood','county','council_district',
-        'police_district','parcel_id_no','ycoordinate','xcoordinate','case_url'],
-        
+                'case_id', 'source', 'department', 'work_group',
+                'request_type', 'category', 'type', 'detail', 'creation_date', 'creation_time',
+                'creation_month', 'creation_year', 'status', 'exceeded_est_timeframe',
+                'closed_date', 'closed_month', 'closed_year', 'days_to_close', 'street_address',
+                'address_with_geocode', 'zip_code', 'neighborhood', 'county', 'council_district',
+                'police_district', 'parcel_id_no', 'ycoordinate', 'xcoordinate', 'case_url'],
+
         "parcel_columns":
         [
-            'the_geom','objectid','parceltype','kivapin','apn','platname','lot',
-        'own_name','own_addr','own_city','own_state','own_zip','assessed_land_value',
-        'assessment_effective_date','legal','shape_area','shape_len','address','addr',
-        'prefix','street','street_type','landusecode','assessed_improve_value',
-        'exempt_land_value','exempt_improve_value','suite','own_name2','own_addr2',
-        'block','tract','fraction'
-        ]
+            'the_geom', 'objectid', 'parceltype', 'kivapin', 'apn', 'platname', 'lot',
+                'own_name', 'own_addr', 'own_city', 'own_state', 'own_zip', 'assessed_land_value',
+                'assessment_effective_date', 'legal', 'shape_area', 'shape_len', 'address', 'addr',
+                'prefix', 'street', 'street_type', 'landusecode', 'assessed_improve_value',
+                'exempt_land_value', 'exempt_improve_value', 'suite', 'own_name2', 'own_addr2',
+                'block', 'tract', 'fraction'
+                ]
     }
 
     def __init__(self, dataset, ):
         self.dataset = self.data_set_choices[dataset]
-        
+
     def get_dataset(self, query=None):
         if query:
             query = query
@@ -214,26 +216,27 @@ class GetKCOpenData():
         result = client.get(self.dataset, query=query)
         df = pd.DataFrame(result)
         return df
-    
+
 
 def memory_format(num, suffix='B'):
-    for unit in ['','K','M','G','T','P','E','Z']:
+    for unit in ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z']:
         if abs(num) < 1024.0:
             return "%3.1f%s%s" % (num, unit, suffix)
-        num /= 1024.0        
+        num /= 1024.0
     return '%1.1f%s%s' % (num, unit, 'Yi')
+
 
 def memory_test(df, dtype=None):
     """ Takes in a DataFrame and returns a formatted view of it's memory usage."""
     df_to_test = df
     if dtype:
-        df_to_test = df.astype(dtype)  
+        df_to_test = df.astype(dtype)
     print(df_to_test.memory_usage().apply(lambda x: memory_format(x)))
     memory_total = memory_format(df_to_test.memory_usage().sum())
     print(f'Total used: {memory_total}')
 
-def clean_street_suffixes(addr, remove=False):
 
+def clean_street_suffixes(addr, remove=False):
     ''' Takes a string and unifies the format of common street suffixes. If remove == True, will remove all suffixes entirely. '''
     import re
 
@@ -262,14 +265,14 @@ def clean_street_suffixes(addr, remove=False):
     remove_suffixes = [
         (rc('(\sAve)$',  re.IGNORECASE), ''),
         (rc('(\sSt)$',  re.IGNORECASE), ''),
-        (rc('(\sTer)$', re.IGNORECASE  ), ''),
+        (rc('(\sTer)$', re.IGNORECASE), ''),
         (rc('(\sTer)$',  re.IGNORECASE), ''),
         (rc('(\sRd)$',  re.IGNORECASE), ''),
         (rc('(\sDr)$',  re.IGNORECASE), ''),
         (rc('(\sCt)$',  re.IGNORECASE), ''),
         (rc('(\sBlvd)$', re.IGNORECASE), ''),
         (rc('(\sPl)$',  re.IGNORECASE), ''),
-        (rc('(\sLn)$', re.IGNORECASE  ), ''),
+        (rc('(\sLn)$', re.IGNORECASE), ''),
         (rc('(\sPkwy)$',  re.IGNORECASE), ''),
         (rc('(\sTrfy)$',  re.IGNORECASE), ''),
         (rc('(\sHwy)$',  re.IGNORECASE), ''),
@@ -277,18 +280,18 @@ def clean_street_suffixes(addr, remove=False):
         (rc('(\sWay)$',  re.IGNORECASE), ''),
         (rc('(\sTrl)$', re.IGNORECASE), ''),
         (rc('(\sCir)$', re.IGNORECASE), ''),
-        (rc('Avenue', re.IGNORECASE),''),
-        (rc('Street', re.IGNORECASE),''),
-        (rc('Terrace', re.IGNORECASE),''),
-        (rc('Terr', re.IGNORECASE),''),
+        (rc('Avenue', re.IGNORECASE), ''),
+        (rc('Street', re.IGNORECASE), ''),
+        (rc('Terrace', re.IGNORECASE), ''),
+        (rc('Terr', re.IGNORECASE), ''),
         (rc('\s(Road)\s?', re.IGNORECASE), ''),
-        (rc('Drive', re.IGNORECASE),''),
-        (rc('Court', re.IGNORECASE),''),
-        (rc('Boulevard', re.IGNORECASE),''),
-        (rc('Place', re.IGNORECASE),''),
+        (rc('Drive', re.IGNORECASE), ''),
+        (rc('Court', re.IGNORECASE), ''),
+        (rc('Boulevard', re.IGNORECASE), ''),
+        (rc('Place', re.IGNORECASE), ''),
         (rc('\sLane\s?,', re.IGNORECASE), ''),
-        (rc('Parkway', re.IGNORECASE),''),
-        (rc('Trafficway', re.IGNORECASE),''),
+        (rc('Parkway', re.IGNORECASE), ''),
+        (rc('Trafficway', re.IGNORECASE), ''),
         (rc('(\sCircle\s?$)', re.IGNORECASE), ''),
         (rc('Highway', re.IGNORECASE), ''),
         (rc('Plaza', re.IGNORECASE), ''),
@@ -304,25 +307,25 @@ def clean_street_suffixes(addr, remove=False):
                     return clean_addr
 
     for pattern, suffix in suffixes:
-       if re.search(pattern, addr):
+        if re.search(pattern, addr):
             clean_addr = re.sub(pattern, suffix, addr)
             return clean_addr
     return addr
-            
-        
+
+
 def remove_symbols(string):
     cleaned_string = re.sub('[\-\,\.\&\%\$\?\!\@\#\"\/\(\)]', '', string)
     return cleaned_string
+
 
 def clean_columns(col):
     if re.search("\s", col) == None:
         col = '_'.join([s for s in re.split("([A-Z][a-z]+)", col) if s])
     col = re.sub('\'|\,', '', col)
     cleaned_string = re.sub('[\.\-|\s]', "_", col)
-    
+
     return cleaned_string.lower()
 
-        
 
 def fuzzy_match_two_columns(two_cols, scorer="WRatio"):
     from rapidfuzz import fuzz
@@ -347,7 +350,7 @@ def fuzzy_match_two_columns(two_cols, scorer="WRatio"):
         'partial_token_ratio': fuzz.partial_token_ratio,
         'WRatio': fuzz.WRatio,
         'QRatio': fuzz.QRatio
-        }
+    }
 
     scorer = scorer_dict[scorer]
 
