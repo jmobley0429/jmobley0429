@@ -1,3 +1,8 @@
+###############
+# Custom module of scripts to query, scrape and process small amounts of data from opencorporates.com
+###############
+
+
 import requests
 import pandas as pd
 import os
